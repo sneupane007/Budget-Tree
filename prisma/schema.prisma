@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrgType {
+  BUSINESS
+  NGO
+  GOVERNMENT
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  VERIFIER
+  VIEWER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum NodeStatus {
+  PLANNED
+  IN_PROGRESS
+  PENDING_VERIFICATION
+  VERIFIED
+  FLAGGED
+  OVERSPENT
+}
+
+model Organization {
+  id        String    @id @default(cuid())
+  name      String
+  type      OrgType
+  createdAt DateTime  @default(now())
+  users     User[]
+  projects  Project[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  name           String
+  email          String       @unique
+  password       String?
+  role           Role         @default(VIEWER)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  ownedNodes     BudgetNode[] @relation("NodeOwner")
+  approvedNodes  BudgetNode[] @relation("NodeApprover")
+  auditLogs      AuditLog[]
+  accounts       Account[]
+  sessions       Session[]
+  createdAt      DateTime     @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Project {
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  totalBudget    Decimal       @db.Decimal(18, 2)
+  currency       String        @default("USD")
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  rootNodeId     String?       @unique
+  rootNode       BudgetNode?   @relation("ProjectRoot", fields: [rootNodeId], references: [id])
+  nodes          BudgetNode[]  @relation("ProjectNodes")
+  status         ProjectStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+}
+
+model BudgetNode {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+  allocatedAmount Decimal      @db.Decimal(18, 2)
+  spentAmount     Decimal      @default(0) @db.Decimal(18, 2)
+  currency        String       @default("USD")
+  status          NodeStatus   @default(PLANNED)
+  depth           Int          @default(0)
+  isRoot          Boolean      @default(false)
+
+  projectId       String
+  project         Project      @relation("ProjectNodes", fields: [projectId], references: [id])
+  rootForProject  Project?     @relation("ProjectRoot")
+
+  parentId        String?
+  parent          BudgetNode?  @relation("NodeHierarchy", fields: [parentId], references: [id])
+  children        BudgetNode[] @relation("NodeHierarchy")
+
+  ownerId         String
+  owner           User         @relation("NodeOwner", fields: [ownerId], references: [id])
+  approverId      String?
+  approver        User?        @relation("NodeApprover", fields: [approverId], references: [id])
+
+  receipts        Receipt[]
+  signatures      Signature[]
+  auditLogs       AuditLog[]
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([projectId])
+  @@index([parentId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+model Receipt {
+  id          String     @id @default(cuid())
+  nodeId      String
+  node        BudgetNode @relation(fields: [nodeId], references: [id])
+  filePath    String
+  fileType    String
+  amount      Decimal    @db.Decimal(18, 2)
+  vendor      String?
+  receiptDate DateTime?
+  notes       String?
+  uploadedAt  DateTime   @default(now())
+  uploadedBy  String
+
+  @@index([nodeId])
+}
+
+model Signature {
+  id            String     @id @default(cuid())
+  nodeId        String
+  node          BudgetNode @relation(fields: [nodeId], references: [id])
+  signaturePath String
+  signerName    String
+  signerEmail   String
+  signedAt      DateTime   @default(now())
+  ipAddress     String?
+  role          String
+
+  @@index([nodeId])
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  nodeId    String?
+  node      BudgetNode? @relation(fields: [nodeId], references: [id])
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  action    String
+  oldValue  Json?
+  newValue  Json?
+  timestamp DateTime    @default(now())
+  ipAddress String?
+
+  @@index([nodeId])
+  @@index([userId])
+}
