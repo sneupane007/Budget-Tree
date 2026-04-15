@@ -1,6 +1,6 @@
 import type { StateCreator } from "zustand"
 
-export type PanelTab = "overview" | "receipts" | "signature" | "audit"
+export type PanelTab = "overview" | "access" | "allocate" | "receipts" | "signature" | "audit"
 
 export interface UISlice {
   panelOpen: boolean

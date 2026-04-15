@@ -9,15 +9,16 @@ import Decimal from "decimal.js"
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
     requireRole(session, "ADMIN", "MANAGER")
 
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.id,
+        id,
         project: { organizationId: session.user.organizationId },
       },
     })
@@ -31,13 +32,13 @@ export async function PATCH(
 
     // Validate against parent (excluding self from sibling sum)
     if (node.parentId) {
-      const validation = await validateAllocation(node.parentId, newAmount, node.id)
+      const validation = await validateAllocation(node.parentId, newAmount, node.id, session.user.organizationId)
       if (!validation.valid) return error(validation.message!, 422)
     }
 
     // Ensure new amount >= already allocated to children
     const children = await prisma.budgetNode.findMany({
-      where: { parentId: node.id },
+      where: { parentId: id },
       select: { allocatedAmount: true },
     })
     const childrenSum = children.reduce(
@@ -54,12 +55,12 @@ export async function PATCH(
 
     const updated = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
       const result = await tx.budgetNode.update({
-        where: { id: params.id },
+        where: { id },
         data: { allocatedAmount: newAmount.toFixed(2) },
       })
       await tx.auditLog.create({
         data: {
-          nodeId: params.id,
+          nodeId: id,
           userId: session.user.id,
           action: "BUDGET_AMENDED",
           oldValue: { allocatedAmount: node.allocatedAmount.toString() },
@@ -70,7 +71,11 @@ export async function PATCH(
       return result
     })
 
-    return success(updated)
+    return success({
+      ...updated,
+      allocatedAmount: updated.allocatedAmount.toString(),
+      spentAmount: updated.spentAmount.toString(),
+    })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)

@@ -18,7 +18,7 @@ export function requireRole(session: Session, ...roles: Role[]): void {
 }
 
 export function withOrgScope(organizationId: string) {
-  return organizationId
+  return { project: { organizationId } }
 }
 
 export class AuthError extends Error {

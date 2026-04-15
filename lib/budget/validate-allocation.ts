@@ -4,10 +4,14 @@ import Decimal from "decimal.js"
 export async function validateAllocation(
   parentId: string,
   requestedAmount: Decimal,
-  excludeNodeId?: string
+  excludeNodeId: string | undefined,
+  organizationId: string
 ): Promise<{ valid: boolean; available: Decimal; message?: string }> {
-  const parent = await prisma.budgetNode.findUnique({
-    where: { id: parentId },
+  const parent = await prisma.budgetNode.findFirst({
+    where: {
+      id: parentId,
+      project: { organizationId },
+    },
     include: {
       children: {
         select: { id: true, allocatedAmount: true },

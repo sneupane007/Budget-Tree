@@ -86,7 +86,7 @@ export function AddNodeDialog({ parentNodeId, projectId, onClose }: Props) {
         </DialogHeader>
         <p className="text-sm text-muted-foreground -mt-2">
           Parent: <span className="font-medium text-gray-900">{parentNode?.name}</span>
-          {" — "}Available: <span className="font-medium text-green-600">{formatCurrency(available, parentNode?.currency)}</span>
+          {" — "}Available: <span className="font-medium text-green-600">{formatCurrency(available.toString(), parentNode?.currency)}</span>
         </p>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <input type="hidden" {...register("parentId")} />
@@ -105,7 +105,7 @@ export function AddNodeDialog({ parentNodeId, projectId, onClose }: Props) {
               type="number"
               step="0.01"
               min="0.01"
-              max={available}
+              max={available.toString()}
               placeholder="0.00"
               {...register("allocatedAmount")}
             />

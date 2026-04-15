@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
     // Validate allocation
     const requestedDecimal = new Decimal(allocatedAmount)
-    const validation = await validateAllocation(parentId, requestedDecimal)
+    const validation = await validateAllocation(parentId, requestedDecimal, undefined, session.user.organizationId)
     if (!validation.valid) return error(validation.message!, 422)
 
     const node = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
@@ -67,7 +67,11 @@ export async function POST(req: NextRequest) {
       return created
     })
 
-    return success(node, 201)
+    return success({
+      ...node,
+      allocatedAmount: node.allocatedAmount.toString(),
+      spentAmount: node.spentAmount.toString(),
+    }, 201)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)

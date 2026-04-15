@@ -10,6 +10,8 @@ import { ReceiptList } from "@/components/receipts/receipt-list"
 import { ReceiptUploader } from "@/components/receipts/receipt-uploader"
 import { SignaturePad } from "@/components/signatures/signature-pad"
 import { AuditTimeline } from "@/components/audit/audit-timeline"
+import { NodeAccessTab } from "@/components/nodes/node-access-tab"
+import { NodeAllocateTab } from "@/components/nodes/node-allocate-tab"
 import { formatCurrency, calcBudgetPercent, formatDate } from "@/lib/utils"
 import { X, User, Calendar } from "lucide-react"
 import type { Session } from "next-auth"
@@ -50,6 +52,8 @@ export function NodeDetailPanel({ session }: { session: Session }) {
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
           <TabsList className="w-full rounded-none border-b bg-transparent h-9 px-3">
             <TabsTrigger value="overview" className="text-xs flex-1">Overview</TabsTrigger>
+            <TabsTrigger value="access" className="text-xs flex-1">Access</TabsTrigger>
+            <TabsTrigger value="allocate" className="text-xs flex-1">Budget</TabsTrigger>
             <TabsTrigger value="receipts" className="text-xs flex-1">Receipts</TabsTrigger>
             <TabsTrigger value="signature" className="text-xs flex-1">Sign</TabsTrigger>
             <TabsTrigger value="audit" className="text-xs flex-1">Audit</TabsTrigger>
@@ -113,6 +117,25 @@ export function NodeDetailPanel({ session }: { session: Session }) {
                 <p className="font-medium">{formatDate(node.createdAt)}</p>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="access" className="p-3 m-0">
+            <NodeAccessTab
+              nodeId={node.id}
+              ownerId={node.ownerId}
+              approverId={node.approverId}
+              session={session}
+            />
+          </TabsContent>
+
+          <TabsContent value="allocate" className="p-3 m-0">
+            <NodeAllocateTab
+              nodeId={node.id}
+              allocatedAmount={node.allocatedAmount.toString()}
+              spentAmount={node.spentAmount.toString()}
+              currency={node.currency}
+              session={session}
+            />
           </TabsContent>
 
           <TabsContent value="receipts" className="p-3 space-y-3 m-0">

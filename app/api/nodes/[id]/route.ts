@@ -7,13 +7,14 @@ import { AuthError } from "@/lib/auth-helpers"
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.id,
+        id,
         project: { organizationId: session.user.organizationId },
       },
       include: {
@@ -34,7 +35,17 @@ export async function GET(
       },
     })
     if (!node) return error("Node not found", 404)
-    return success(node)
+    return success({
+      ...node,
+      allocatedAmount: node.allocatedAmount.toString(),
+      spentAmount: node.spentAmount.toString(),
+      receipts: node.receipts.map((r) => ({ ...r, amount: r.amount.toString() })),
+      children: node.children.map((c) => ({
+        ...c,
+        allocatedAmount: c.allocatedAmount.toString(),
+        spentAmount: c.spentAmount.toString(),
+      })),
+    })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)
@@ -43,13 +54,15 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
+    requireRole(session, "ADMIN", "MANAGER")
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.id,
+        id,
         project: { organizationId: session.user.organizationId },
       },
     })
@@ -61,7 +74,7 @@ export async function PATCH(
 
     const updated = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
       const result = await tx.budgetNode.update({
-        where: { id: params.id },
+        where: { id },
         data: parsed.data,
         include: {
           owner: { select: { id: true, name: true, email: true, role: true } },
@@ -69,7 +82,7 @@ export async function PATCH(
       })
       await tx.auditLog.create({
         data: {
-          nodeId: params.id,
+          nodeId: id,
           userId: session.user.id,
           action: "NODE_UPDATED",
           oldValue: { name: node.name, ownerId: node.ownerId },
@@ -80,7 +93,11 @@ export async function PATCH(
       return result
     })
 
-    return success(updated)
+    return success({
+      ...updated,
+      allocatedAmount: updated.allocatedAmount.toString(),
+      spentAmount: updated.spentAmount.toString(),
+    })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)
@@ -89,15 +106,16 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
     requireRole(session, "ADMIN", "MANAGER")
 
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.id,
+        id,
         project: { organizationId: session.user.organizationId },
       },
       include: { _count: { select: { children: true } } },
@@ -107,7 +125,18 @@ export async function DELETE(
     if (node.status !== "PLANNED") return error("Only PLANNED nodes can be deleted", 400)
     if (node.isRoot) return error("Cannot delete the root node", 400)
 
-    await prisma.budgetNode.delete({ where: { id: params.id } })
+    await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
+      await tx.auditLog.create({
+        data: {
+          nodeId: id,
+          userId: session.user.id,
+          action: "NODE_DELETED",
+          oldValue: { name: node.name, allocatedAmount: node.allocatedAmount.toString() },
+          ipAddress: req.headers.get("x-forwarded-for") ?? undefined,
+        },
+      })
+      await tx.budgetNode.delete({ where: { id } })
+    })
     return success({ deleted: true })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)

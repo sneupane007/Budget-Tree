@@ -6,9 +6,10 @@ import { AuthError } from "@/lib/auth-helpers"
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { nodeId: string } }
+  { params }: { params: Promise<{ nodeId: string }> }
 ) {
   try {
+    const { nodeId } = await params
     const session = await requireSession()
     const { searchParams } = new URL(req.url)
     const cursor = searchParams.get("cursor")
@@ -16,14 +17,14 @@ export async function GET(
 
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.nodeId,
+        id: nodeId,
         project: { organizationId: session.user.organizationId },
       },
     })
     if (!node) return error("Node not found", 404)
 
     const logs = await prisma.auditLog.findMany({
-      where: { nodeId: params.nodeId },
+      where: { nodeId },
       include: { user: { select: { id: true, name: true, email: true } } },
       orderBy: { timestamp: "desc" },
       take: take + 1,

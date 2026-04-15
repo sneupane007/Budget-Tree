@@ -7,15 +7,16 @@ import { AuthError } from "@/lib/auth-helpers"
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
     requireRole(session, "ADMIN", "MANAGER", "VERIFIER")
 
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.id,
+        id,
         project: { organizationId: session.user.organizationId },
       },
     })
@@ -25,14 +26,27 @@ export async function PATCH(
     const parsed = UpdateNodeStatusSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 
+    const VALID_TRANSITIONS: Record<string, string[]> = {
+      PLANNED: ["IN_PROGRESS", "FLAGGED"],
+      IN_PROGRESS: ["PENDING_VERIFICATION", "FLAGGED", "PLANNED"],
+      PENDING_VERIFICATION: ["VERIFIED", "IN_PROGRESS", "FLAGGED"],
+      VERIFIED: ["IN_PROGRESS"],
+      FLAGGED: ["IN_PROGRESS", "PLANNED"],
+      OVERSPENT: ["FLAGGED"],
+    }
+    const allowed = VALID_TRANSITIONS[node.status] ?? []
+    if (!allowed.includes(parsed.data.status)) {
+      return error(`Cannot transition from ${node.status} to ${parsed.data.status}`, 422)
+    }
+
     const updated = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
       const result = await tx.budgetNode.update({
-        where: { id: params.id },
+        where: { id },
         data: { status: parsed.data.status },
       })
       await tx.auditLog.create({
         data: {
-          nodeId: params.id,
+          nodeId: id,
           userId: session.user.id,
           action: "STATUS_CHANGED",
           oldValue: { status: node.status },
@@ -43,7 +57,11 @@ export async function PATCH(
       return result
     })
 
-    return success(updated)
+    return success({
+      ...updated,
+      allocatedAmount: updated.allocatedAmount.toString(),
+      spentAmount: updated.spentAmount.toString(),
+    })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)

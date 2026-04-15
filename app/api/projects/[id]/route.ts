@@ -7,19 +7,20 @@ import { AuthError } from "@/lib/auth-helpers"
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
 
     const project = await prisma.project.findFirst({
-      where: { id: params.id, organizationId: session.user.organizationId },
+      where: { id, organizationId: session.user.organizationId },
     })
     if (!project) return error("Project not found", 404)
 
     // Fetch all nodes flat — avoid recursive includes
     const nodes = await prisma.budgetNode.findMany({
-      where: { projectId: params.id },
+      where: { projectId: id },
       include: {
         owner: { select: { id: true, name: true, email: true, role: true } },
         approver: { select: { id: true, name: true, email: true } },
@@ -28,7 +29,12 @@ export async function GET(
       orderBy: [{ depth: "asc" }, { createdAt: "asc" }],
     })
 
-    return success({ ...project, nodes })
+    const serializedNodes = nodes.map((n) => ({
+      ...n,
+      allocatedAmount: n.allocatedAmount.toString(),
+      spentAmount: n.spentAmount.toString(),
+    }))
+    return success({ ...project, nodes: serializedNodes })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)
@@ -37,13 +43,14 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
 
     const project = await prisma.project.findFirst({
-      where: { id: params.id, organizationId: session.user.organizationId },
+      where: { id, organizationId: session.user.organizationId },
     })
     if (!project) return error("Project not found", 404)
 
@@ -52,7 +59,7 @@ export async function PATCH(
     if (!parsed.success) return validationError(parsed.error.issues)
 
     const updated = await prisma.project.update({
-      where: { id: params.id },
+      where: { id },
       data: parsed.data,
     })
 

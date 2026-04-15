@@ -9,13 +9,14 @@ import Decimal from "decimal.js"
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await requireSession()
     const node = await prisma.budgetNode.findFirst({
       where: {
-        id: params.id,
+        id,
         project: { organizationId: session.user.organizationId },
       },
     })
@@ -26,13 +27,14 @@ export async function POST(
     if (!parsed.success) return validationError(parsed.error.issues)
 
     const addedSpend = new Decimal(parsed.data.amount)
+    if (addedSpend.lte(0)) return error("Spend amount must be positive", 422)
     const newSpent = new Decimal(node.spentAmount.toString()).add(addedSpend)
     const allocated = new Decimal(node.allocatedAmount.toString())
     const isOverspent = newSpent.gt(allocated)
 
     const updated = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
       const result = await tx.budgetNode.update({
-        where: { id: params.id },
+        where: { id },
         data: {
           spentAmount: newSpent.toFixed(2),
           status: isOverspent
@@ -45,7 +47,7 @@ export async function POST(
 
       await tx.auditLog.create({
         data: {
-          nodeId: params.id,
+          nodeId: id,
           userId: session.user.id,
           action: "SPEND_RECORDED",
           oldValue: { spentAmount: node.spentAmount.toString() },
@@ -59,13 +61,17 @@ export async function POST(
       })
 
       if (node.parentId) {
-        await recalculateRollups(params.id, tx)
+        await recalculateRollups(id, tx)
       }
 
       return result
     })
 
-    return success(updated)
+    return success({
+      ...updated,
+      allocatedAmount: updated.allocatedAmount.toString(),
+      spentAmount: updated.spentAmount.toString(),
+    })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)

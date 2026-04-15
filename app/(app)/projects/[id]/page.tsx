@@ -29,7 +29,13 @@ async function getProject(id: string, orgId: string) {
     select: { id: true, name: true, email: true, role: true },
   })
 
-  return { project, nodes: nodes as BudgetNodeWithOwner[], orgUsers }
+  const serializedNodes = nodes.map((n) => ({
+    ...n,
+    allocatedAmount: n.allocatedAmount.toString(),
+    spentAmount: n.spentAmount.toString(),
+  })) as BudgetNodeWithOwner[]
+
+  return { project, nodes: serializedNodes, orgUsers }
 }
 
 const statusColor = {

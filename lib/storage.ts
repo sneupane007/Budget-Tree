@@ -24,8 +24,9 @@ export async function uploadSignature(
   dataUrl: string,
   signerEmail: string
 ): Promise<string> {
-  const base64 = dataUrl.replace(/^data:image\/png;base64,/, "")
-  const buffer = Buffer.from(base64, "base64")
+  const match = dataUrl.match(/^data:image\/png;base64,(.+)$/)
+  if (!match) throw new Error("Invalid signature data URL: expected PNG base64 data URL")
+  const buffer = Buffer.from(match[1], "base64")
   const path = `${nodeId}/${Date.now()}-${signerEmail}.png`
   const { error } = await supabaseAdmin.storage
     .from("signatures")

@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
     })
 
     return success(user, 201)
-  } catch {
+  } catch (e) {
+    console.error("[POST /api/register]", e)
     return error("Internal server error", 500)
   }
 }
