@@ -41,3 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
+/.claude/
+vercel.json
+architecture.md
+budgettree-course.html
+eslint.config.mjs

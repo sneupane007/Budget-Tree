@@ -192,8 +192,3 @@ Zod v4 + React Hook Form v7. Zod schemas must **not** use `.default()` — it ca
 | `VIEWER` | Read-only |
 
 ---
-
-## Supabase project
-
-- Project ID: `mfzoikxaubjzyyjmabzq` (region: us-east-1)
-- Dashboard: https://supabase.com/dashboard/project/mfzoikxaubjzyyjmabzq
