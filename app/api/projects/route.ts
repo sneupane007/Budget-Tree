@@ -5,12 +5,19 @@ import { CreateProjectSchema } from "@/lib/validators/project"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import Decimal from "decimal.js"
+import { cacheKey, cacheGet, cacheSet, cacheInvalidate } from "@/lib/cache"
 
 export async function GET() {
   try {
     const session = await requireSession()
+    const orgId = session.user.organizationId
+    const key = cacheKey(orgId, "projects")
+
+    const cached = await cacheGet(key)
+    if (cached) return success(cached)
+
     const projects = await prisma.project.findMany({
-      where: { organizationId: session.user.organizationId },
+      where: { organizationId: orgId },
       include: {
         rootNode: {
           select: {
@@ -25,6 +32,7 @@ export async function GET() {
       },
       orderBy: { createdAt: "desc" },
     })
+    await cacheSet(key, projects, 60)
     return success(projects)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
@@ -78,6 +86,9 @@ export async function POST(req: NextRequest) {
 
       return { ...proj, rootNode }
     })
+
+    const orgId = session.user.organizationId
+    await cacheInvalidate(cacheKey(orgId, "projects"), cacheKey(orgId, "dashboard"))
 
     return success(project, 201)
   } catch (e) {

@@ -5,6 +5,7 @@ import { SubmitSignatureSchema } from "@/lib/validators/signature"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { uploadSignature } from "@/lib/storage"
+import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 
 export async function POST(req: NextRequest) {
   try {
@@ -74,6 +75,12 @@ export async function POST(req: NextRequest) {
 
       return sig
     })
+
+    const orgId = session.user.organizationId
+    const invalidateKeys = [cacheKey(orgId, "nodes", nodeId)]
+    if (node.status === "PLANNED") invalidateKeys.push(cacheKey(orgId, "dashboard"))
+    await cacheInvalidate(...invalidateKeys)
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", nodeId, "*"))
 
     return success(signature, 201)
   } catch (e) {

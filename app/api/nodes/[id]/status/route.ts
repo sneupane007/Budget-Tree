@@ -4,6 +4,7 @@ import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { UpdateNodeStatusSchema } from "@/lib/validators/node"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
+import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 
 export async function PATCH(
   req: NextRequest,
@@ -56,6 +57,14 @@ export async function PATCH(
       })
       return result
     })
+
+    const orgId = session.user.organizationId
+    await cacheInvalidate(
+      cacheKey(orgId, "nodes", id),
+      cacheKey(orgId, "dashboard"),
+      cacheKey(orgId, "projects", node.projectId),
+    )
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
 
     return success({
       ...updated,

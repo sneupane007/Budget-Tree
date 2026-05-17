@@ -5,6 +5,7 @@ import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { z } from "zod"
 import bcrypt from "bcryptjs"
+import { cacheKey, cacheGet, cacheSet, cacheInvalidate } from "@/lib/cache"
 
 const InviteMemberSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -16,11 +17,18 @@ const InviteMemberSchema = z.object({
 export async function GET() {
   try {
     const session = await requireSession()
+    const orgId = session.user.organizationId
+    const key = cacheKey(orgId, "members")
+
+    const cached = await cacheGet(key)
+    if (cached) return success(cached)
+
     const members = await prisma.user.findMany({
-      where: { organizationId: session.user.organizationId },
+      where: { organizationId: orgId },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     })
+    await cacheSet(key, members, 300)
     return success(members)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
@@ -51,6 +59,9 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     })
+
+    await cacheInvalidate(cacheKey(session.user.organizationId, "members"))
+
     return success(user)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)

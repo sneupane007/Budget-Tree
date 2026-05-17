@@ -4,6 +4,7 @@ import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { z } from "zod"
+import { cacheKey, cacheInvalidate } from "@/lib/cache"
 
 const UpdateRoleSchema = z.object({
   role: z.enum(["ADMIN", "MANAGER", "VERIFIER", "VIEWER"]),
@@ -32,6 +33,8 @@ export async function PATCH(
       data: { role: parsed.data.role },
       select: { id: true, name: true, email: true, role: true },
     })
+    await cacheInvalidate(cacheKey(session.user.organizationId, "members"))
+
     return success(updated)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)

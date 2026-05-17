@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useStore } from "@/store"
+import { mutate as globalMutate } from "swr"
 import { toast } from "sonner"
 import type { Session } from "next-auth"
 
@@ -49,12 +50,9 @@ export function SignaturePad({ nodeId, session }: Props) {
         toast.error(json.error ?? "Signature submission failed")
         return
       }
-      // Refresh node status
-      const nodeRes = await fetch(`/api/nodes/${nodeId}`)
-      const nodeJson = await nodeRes.json()
-      if (nodeJson.data) {
-        updateNode(nodeId, { status: nodeJson.data.status })
-      }
+      // Refresh node status via SWR cache
+      const fresh = await globalMutate(`/api/nodes/${nodeId}`) as { status: string } | undefined
+      if (fresh?.status) updateNode(nodeId, { status: fresh.status as import("@prisma/client").NodeStatus })
       toast.success("Signature submitted")
       sigRef.current.clear()
     } catch {

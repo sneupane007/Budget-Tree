@@ -2,11 +2,16 @@ import { requireSession } from "@/lib/auth-helpers"
 import { prisma } from "@/lib/db"
 import { success, error } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
+import { cacheKey, cacheGet, cacheSet } from "@/lib/cache"
 
 export async function GET() {
   try {
     const session = await requireSession()
     const orgId = session.user.organizationId
+    const key = cacheKey(orgId, "dashboard")
+
+    const cached = await cacheGet(key)
+    if (cached) return success(cached)
 
     const [projects, nodeAggregates, nodesByStatus, overspentNodes, recentActivity] =
       await Promise.all([
@@ -46,14 +51,16 @@ export async function GET() {
       nodesByStatus.map((s: { status: string; _count: { status: number } }) => [s.status, s._count.status])
     )
 
-    return success({
+    const data = {
       activeProjects: projects,
       totalBudget,
       totalSpent,
       nodesByStatus: statusMap,
       overspentNodes,
       recentActivity,
-    })
+    }
+    await cacheSet(key, data, 60)
+    return success(data)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)

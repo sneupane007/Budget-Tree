@@ -6,6 +6,7 @@ import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { uploadReceipt } from "@/lib/storage"
 import Decimal from "decimal.js"
+import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"]
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -68,6 +69,10 @@ export async function POST(req: NextRequest) {
       })
       return r
     })
+
+    const orgId = session.user.organizationId
+    await cacheInvalidate(cacheKey(orgId, "nodes", nodeId))
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", nodeId, "*"))
 
     return success(receipt, 201)
   } catch (e) {

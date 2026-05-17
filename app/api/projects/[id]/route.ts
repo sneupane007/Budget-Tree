@@ -4,6 +4,7 @@ import { requireSession } from "@/lib/auth-helpers"
 import { UpdateProjectSchema } from "@/lib/validators/project"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
+import { cacheKey, cacheGet, cacheSet, cacheInvalidate } from "@/lib/cache"
 
 export async function GET(
   _req: NextRequest,
@@ -12,9 +13,14 @@ export async function GET(
   try {
     const { id } = await params
     const session = await requireSession()
+    const orgId = session.user.organizationId
+    const key = cacheKey(orgId, "projects", id)
+
+    const cached = await cacheGet(key)
+    if (cached) return success(cached)
 
     const project = await prisma.project.findFirst({
-      where: { id, organizationId: session.user.organizationId },
+      where: { id, organizationId: orgId },
     })
     if (!project) return error("Project not found", 404)
 
@@ -34,7 +40,9 @@ export async function GET(
       allocatedAmount: n.allocatedAmount.toString(),
       spentAmount: n.spentAmount.toString(),
     }))
-    return success({ ...project, nodes: serializedNodes })
+    const data = { ...project, nodes: serializedNodes }
+    await cacheSet(key, data, 60)
+    return success(data)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)
@@ -48,9 +56,10 @@ export async function PATCH(
   try {
     const { id } = await params
     const session = await requireSession()
+    const orgId = session.user.organizationId
 
     const project = await prisma.project.findFirst({
-      where: { id, organizationId: session.user.organizationId },
+      where: { id, organizationId: orgId },
     })
     if (!project) return error("Project not found", 404)
 
@@ -62,6 +71,8 @@ export async function PATCH(
       where: { id },
       data: parsed.data,
     })
+
+    await cacheInvalidate(cacheKey(orgId, "projects", id), cacheKey(orgId, "projects"))
 
     return success(updated)
   } catch (e) {

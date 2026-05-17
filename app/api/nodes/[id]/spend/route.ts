@@ -6,6 +6,7 @@ import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { recalculateRollups } from "@/lib/budget/recalculate-rollups"
 import Decimal from "decimal.js"
+import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 
 export async function POST(
   req: NextRequest,
@@ -66,6 +67,14 @@ export async function POST(
 
       return result
     })
+
+    const orgId = session.user.organizationId
+    await cacheInvalidate(
+      cacheKey(orgId, "nodes", id),
+      cacheKey(orgId, "dashboard"),
+      cacheKey(orgId, "projects", node.projectId),
+    )
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
 
     return success({
       ...updated,

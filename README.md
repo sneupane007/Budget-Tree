@@ -2,6 +2,8 @@
 
 A hierarchical budget management platform for organizations. Budget allocations are structured as a tree of nodes — each node can own a slice of a parent's budget, track spending, and require verification via receipts and signatures.
 
+Visit `/home` for the public landing page, or `/dashboard` after signing in.
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -98,6 +100,7 @@ npx tsc --noEmit     # TypeScript type check (no test suite exists)
 
 ```
 app/
+  home/           # Public landing page (no auth required)
   (app)/          # Authenticated app routes (dashboard, projects, nodes)
   (auth)/         # Login / register pages
   api/            # API route handlers
@@ -113,7 +116,7 @@ prisma/
   schema.prisma   # DB schema
   seed.ts         # Demo data seeder
 prisma.config.ts  # Prisma 7 database URL config (NOT in schema.prisma)
-middleware.ts     # Route protection
+proxy.ts          # Auth middleware (Next.js 16 — NOT middleware.ts)
 ```
 
 ### Prisma 7 — database URL config

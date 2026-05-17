@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useRef } from "react"
+import useSWRInfinite from "swr/infinite"
+import { fetcher } from "@/lib/fetcher"
 import { formatRelativeTime } from "@/lib/utils"
 import {
   FileText,
@@ -33,51 +35,49 @@ interface AuditEntry {
   newValue: Record<string, unknown> | null
 }
 
+interface AuditPage {
+  items: AuditEntry[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
 export function AuditTimeline({ nodeId }: { nodeId: string }) {
-  const [logs, setLogs] = useState<AuditEntry[]>([])
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [loading, setLoading] = useState(false)
   const loaderRef = useRef<HTMLDivElement>(null)
 
-  const fetchLogs = useCallback(async (reset = false) => {
-    setLoading(true)
-    try {
-      const url = reset
-        ? `/api/audit/${nodeId}`
-        : `/api/audit/${nodeId}${cursor ? `?cursor=${cursor}` : ""}`
-      const res = await fetch(url)
-      const json = await res.json()
-      if (json.data) {
-        setLogs((prev) => (reset ? json.data.items : [...prev, ...json.data.items]))
-        setCursor(json.data.nextCursor)
-        setHasMore(json.data.hasMore)
-      }
-    } catch {
-      toast.error("Failed to load audit log")
-    } finally {
-      setLoading(false)
+  const getKey = (pageIndex: number, prev: AuditPage | null) => {
+    if (prev && !prev.hasMore) return null
+    const cursor = prev?.nextCursor
+    return cursor
+      ? `/api/audit/${nodeId}?cursor=${cursor}`
+      : `/api/audit/${nodeId}`
+  }
+
+  const { data, isValidating, setSize, error } = useSWRInfinite<AuditPage>(
+    getKey,
+    fetcher,
+    { revalidateOnFocus: false, revalidateFirstPage: false, dedupingInterval: 30_000,
+      onError: () => toast.error("Failed to load audit log") }
+  )
+
+  const pages = data ?? []
+  const logs = pages.flatMap((p) => p.items)
+  const hasMore = pages[pages.length - 1]?.hasMore ?? false
+
+  // Trigger next page when sentinel enters view
+  const observerCallback = (entries: IntersectionObserverEntry[]) => {
+    if (entries[0]?.isIntersecting && hasMore && !isValidating) {
+      setSize((s) => s + 1)
     }
-  }, [nodeId, cursor])
+  }
 
-  useEffect(() => {
-    fetchLogs(true)
-  }, [nodeId])
+  const setLoaderRef = (el: HTMLDivElement | null) => {
+    if (!el) return
+    ;(loaderRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+    const observer = new IntersectionObserver(observerCallback, { threshold: 0.5 })
+    observer.observe(el)
+  }
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasMore && !loading) {
-          fetchLogs()
-        }
-      },
-      { threshold: 0.5 }
-    )
-    if (loaderRef.current) observer.observe(loaderRef.current)
-    return () => observer.disconnect()
-  }, [hasMore, loading, fetchLogs])
-
-  if (!loading && logs.length === 0) {
+  if (!isValidating && !error && logs.length === 0) {
     return <p className="text-xs text-muted-foreground">No activity yet</p>
   }
 
@@ -112,8 +112,8 @@ export function AuditTimeline({ nodeId }: { nodeId: string }) {
           </div>
         )
       })}
-      <div ref={loaderRef} className="text-center py-1">
-        {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
+      <div ref={setLoaderRef} className="text-center py-1">
+        {isValidating && <p className="text-xs text-muted-foreground">Loading...</p>}
       </div>
     </div>
   )

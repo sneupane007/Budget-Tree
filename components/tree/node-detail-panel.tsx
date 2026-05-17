@@ -14,6 +14,7 @@ import { NodeAccessTab } from "@/components/nodes/node-access-tab"
 import { NodeAllocateTab } from "@/components/nodes/node-allocate-tab"
 import { formatCurrency, calcBudgetPercent, formatDate } from "@/lib/utils"
 import { X, User, Calendar } from "lucide-react"
+import { mutate as globalMutate } from "swr"
 import type { Session } from "next-auth"
 
 export function NodeDetailPanel({ session }: { session: Session }) {
@@ -139,7 +140,7 @@ export function NodeDetailPanel({ session }: { session: Session }) {
           </TabsContent>
 
           <TabsContent value="receipts" className="p-3 space-y-3 m-0">
-            <ReceiptUploader nodeId={node.id} />
+            <ReceiptUploader nodeId={node.id} onUploaded={() => globalMutate(`/api/nodes/${node.id}`)} />
             <ReceiptList nodeId={node.id} />
           </TabsContent>
 

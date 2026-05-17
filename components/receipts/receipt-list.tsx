@@ -1,22 +1,19 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import useSWR from "swr"
+import { fetcher } from "@/lib/fetcher"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { FileText, Image, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import type { Receipt } from "@prisma/client"
 
-export function ReceiptList({ nodeId }: { nodeId: string }) {
-  const [receipts, setReceipts] = useState<Receipt[]>([])
-  const [loading, setLoading] = useState(true)
+interface NodeWithReceipts {
+  receipts: (Receipt & { amount: string })[]
+}
 
-  useEffect(() => {
-    fetch(`/api/nodes/${nodeId}`)
-      .then((r) => r.json())
-      .then((json) => setReceipts(json.data?.receipts ?? []))
-      .catch(() => toast.error("Failed to load receipts"))
-      .finally(() => setLoading(false))
-  }, [nodeId])
+export function ReceiptList({ nodeId }: { nodeId: string }) {
+  const { data, isLoading } = useSWR<NodeWithReceipts>(`/api/nodes/${nodeId}`, fetcher)
+  const receipts = data?.receipts ?? []
 
   async function openReceipt(receiptId: string) {
     try {
@@ -30,7 +27,7 @@ export function ReceiptList({ nodeId }: { nodeId: string }) {
     }
   }
 
-  if (loading) return <p className="text-xs text-muted-foreground">Loading receipts...</p>
+  if (isLoading) return <p className="text-xs text-muted-foreground">Loading receipts...</p>
   if (receipts.length === 0)
     return <p className="text-xs text-muted-foreground">No receipts uploaded yet</p>
 
@@ -48,7 +45,7 @@ export function ReceiptList({ nodeId }: { nodeId: string }) {
           )}
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium">
-              {r.vendor ?? "Receipt"} — {formatCurrency(r.amount.toString())}
+              {r.vendor ?? "Receipt"} — {formatCurrency(r.amount)}
             </p>
             {r.receiptDate && (
               <p className="text-xs text-muted-foreground">{formatDate(r.receiptDate)}</p>

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { requireSession } from "@/lib/auth-helpers"
 import { success, error } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
+import { cacheKey, cacheGet, cacheSet } from "@/lib/cache"
 
 export async function GET(
   req: NextRequest,
@@ -11,14 +12,19 @@ export async function GET(
   try {
     const { nodeId } = await params
     const session = await requireSession()
+    const orgId = session.user.organizationId
     const { searchParams } = new URL(req.url)
     const cursor = searchParams.get("cursor")
     const take = 20
 
+    const key = cacheKey(orgId, "audit", nodeId, cursor ?? "first")
+    const cached = await cacheGet(key)
+    if (cached) return success(cached)
+
     const node = await prisma.budgetNode.findFirst({
       where: {
         id: nodeId,
-        project: { organizationId: session.user.organizationId },
+        project: { organizationId: orgId },
       },
     })
     if (!node) return error("Node not found", 404)
@@ -34,8 +40,10 @@ export async function GET(
     const hasMore = logs.length > take
     const items = hasMore ? logs.slice(0, take) : logs
     const nextCursor = hasMore ? items[items.length - 1]?.id : null
+    const data = { items, nextCursor, hasMore }
 
-    return success({ items, nextCursor, hasMore })
+    await cacheSet(key, data, 30)
+    return success(data)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)

@@ -15,7 +15,7 @@ npm run db:studio    # Open Prisma Studio
 npx prisma generate  # Regenerate Prisma client after schema changes
 ```
 
-There are no automated tests. TypeScript checking: `npx tsc --noEmit`.
+There are no automated tests. TypeScript checking: `npx tsc --noEmit`. **Note:** tsc will error on `@prisma/client` imports until `npx prisma generate` has been run (types are not committed).
 
 ## Architecture
 
@@ -40,8 +40,16 @@ NextAuth.js v4 with JWT strategy. Session is augmented with `role` and `organiza
 ### File storage
 Supabase Storage with 3 private buckets: `receipts`, `signatures`, `exports`. **Only file paths are stored in the DB**, never signed URLs. Call `getSignedUrl()` from `lib/storage.ts` at read time (1hr expiry for receipts).
 
+### Public routes
+`app/home/page.tsx` is the public marketing/landing page (no auth check). `app/page.tsx` redirects to `/dashboard` (logged in) or `/home` (logged out). Auth-only pages live inside `app/(app)/`.
+
+### Auth middleware
+Auth guard lives in `proxy.ts` (root) — **not** `middleware.ts`. Next.js 16 renamed the convention; using `middleware.ts` produces a deprecation warning.
+
 ### API routes
 All routes return `{ data, error }` envelope via helpers in `lib/api-response.ts`. Auth errors throw `AuthError` (from `lib/auth-helpers.ts`) which routes catch and convert to 401/403 responses.
+
+**Next.js 16:** Route handler `params` is a `Promise` — always type as `{ params: Promise<{ id: string }> }` and `await params` before use.
 
 ### Monetary values
 Always use `decimal.js` (`Decimal`) for arithmetic. Prisma returns `Decimal` objects — call `.toString()` before passing to the client. Never use JS `number` for money.

@@ -6,6 +6,7 @@ import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { validateAllocation } from "@/lib/budget/validate-allocation"
 import Decimal from "decimal.js"
+import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 
 export async function PATCH(
   req: NextRequest,
@@ -70,6 +71,11 @@ export async function PATCH(
       })
       return result
     })
+
+    const orgId = session.user.organizationId
+    await cacheInvalidate(cacheKey(orgId, "nodes", id))
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
+    if (node.projectId) await cacheInvalidate(cacheKey(orgId, "projects", node.projectId))
 
     return success({
       ...updated,

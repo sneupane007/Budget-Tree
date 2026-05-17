@@ -4,6 +4,7 @@ import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { UpdateNodeSchema } from "@/lib/validators/node"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
+import { cacheKey, cacheGet, cacheSet, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 
 export async function GET(
   _req: NextRequest,
@@ -12,10 +13,16 @@ export async function GET(
   try {
     const { id } = await params
     const session = await requireSession()
+    const orgId = session.user.organizationId
+    const key = cacheKey(orgId, "nodes", id)
+
+    const cached = await cacheGet(key)
+    if (cached) return success(cached)
+
     const node = await prisma.budgetNode.findFirst({
       where: {
         id,
-        project: { organizationId: session.user.organizationId },
+        project: { organizationId: orgId },
       },
       include: {
         owner: { select: { id: true, name: true, email: true, role: true } },
@@ -35,7 +42,8 @@ export async function GET(
       },
     })
     if (!node) return error("Node not found", 404)
-    return success({
+
+    const data = {
       ...node,
       allocatedAmount: node.allocatedAmount.toString(),
       spentAmount: node.spentAmount.toString(),
@@ -45,7 +53,9 @@ export async function GET(
         allocatedAmount: c.allocatedAmount.toString(),
         spentAmount: c.spentAmount.toString(),
       })),
-    })
+    }
+    await cacheSet(key, data, 30)
+    return success(data)
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
     return error("Internal server error", 500)
@@ -60,10 +70,12 @@ export async function PATCH(
     const { id } = await params
     const session = await requireSession()
     requireRole(session, "ADMIN", "MANAGER")
+    const orgId = session.user.organizationId
+
     const node = await prisma.budgetNode.findFirst({
       where: {
         id,
-        project: { organizationId: session.user.organizationId },
+        project: { organizationId: orgId },
       },
     })
     if (!node) return error("Node not found", 404)
@@ -93,6 +105,9 @@ export async function PATCH(
       return result
     })
 
+    await cacheInvalidate(cacheKey(orgId, "nodes", id))
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
+
     return success({
       ...updated,
       allocatedAmount: updated.allocatedAmount.toString(),
@@ -112,11 +127,12 @@ export async function DELETE(
     const { id } = await params
     const session = await requireSession()
     requireRole(session, "ADMIN", "MANAGER")
+    const orgId = session.user.organizationId
 
     const node = await prisma.budgetNode.findFirst({
       where: {
         id,
-        project: { organizationId: session.user.organizationId },
+        project: { organizationId: orgId },
       },
       include: { _count: { select: { children: true } } },
     })
@@ -137,6 +153,14 @@ export async function DELETE(
       })
       await tx.budgetNode.delete({ where: { id } })
     })
+
+    await cacheInvalidate(
+      cacheKey(orgId, "nodes", id),
+      cacheKey(orgId, "projects", node.projectId),
+      cacheKey(orgId, "projects"),
+    )
+    await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
+
     return success({ deleted: true })
   } catch (e) {
     if (e instanceof AuthError) return error(e.message, e.status)
