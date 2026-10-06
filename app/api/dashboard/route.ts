@@ -17,7 +17,7 @@ export async function GET() {
       await Promise.all([
         prisma.project.count({ where: { organizationId: orgId, status: "ACTIVE" } }),
         prisma.budgetNode.aggregate({
-          where: { project: { organizationId: orgId } },
+          where: { project: { organizationId: orgId }, isRoot: true },
           _sum: { allocatedAmount: true, spentAmount: true },
         }),
         prisma.budgetNode.groupBy({

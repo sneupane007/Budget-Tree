@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { prisma } from "@/lib/db"
-import { requireSession } from "@/lib/auth-helpers"
+import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { SubmitSignatureSchema } from "@/lib/validators/signature"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
@@ -10,7 +10,8 @@ import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSession()
-    const body = await req.json()
+    requireRole(session, "ADMIN", "MANAGER", "VERIFIER")
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = SubmitSignatureSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 
@@ -26,6 +27,12 @@ export async function POST(req: NextRequest) {
       },
     })
     if (!node) return error("Node not found", 404)
+
+    const png = Buffer.from(signatureDataUrl.slice("data:image/png;base64,".length), "base64")
+    if (!png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      return error("Signature is not a valid PNG image", 422)
+    }
+    if (png.length > 2 * 1024 * 1024) return error("Signature image too large (max 2MB)", 413)
 
     const ip = req.headers.get("x-forwarded-for") ?? undefined
     const signaturePath = await uploadSignature(nodeId, signatureDataUrl, signerEmail)
@@ -77,7 +84,7 @@ export async function POST(req: NextRequest) {
     })
 
     const orgId = session.user.organizationId
-    const invalidateKeys = [cacheKey(orgId, "nodes", nodeId)]
+    const invalidateKeys = [cacheKey(orgId, "nodes", nodeId), cacheKey(orgId, "projects", node.projectId)]
     if (node.status === "PLANNED") invalidateKeys.push(cacheKey(orgId, "dashboard"))
     await cacheInvalidate(...invalidateKeys)
     await cacheInvalidatePattern(cacheKey(orgId, "audit", nodeId, "*"))

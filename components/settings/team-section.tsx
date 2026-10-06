@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MembersTable } from "./members-table"
 import { InviteMemberDialog } from "./invite-member-dialog"
@@ -23,10 +24,12 @@ interface Props {
 }
 
 export function TeamSection({ initialMembers, currentUserId, isAdmin }: Props) {
+  const router = useRouter()
   const [members, setMembers] = useState(initialMembers)
 
   function handleInvited(newMember: { id: string; name: string; email: string; role: string; createdAt: string }) {
     setMembers((prev) => [...prev, newMember as Member])
+    router.refresh() // re-render server parts (e.g. the "N members" count)
   }
 
   return (

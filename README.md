@@ -16,17 +16,16 @@ Visit `/home` for the public landing page, or `/dashboard` after signing in.
 | UI | React Flow + Radix UI + Tailwind CSS v4 |
 | Validation | Zod v4 + React Hook Form v7 |
 | Money | decimal.js |
-| Background Jobs | BullMQ + Upstash Redis |
-| Email | Resend |
+| Caching | Upstash Redis (via Vercel Marketplace) |
 
 ---
 
 ## Prerequisites
 
 - Node.js 20+
-- PostgreSQL database (local or remote)
-- Supabase project (for file storage)
-- Upstash Redis (for background jobs)
+- PostgreSQL database (local or remote) — Supabase Postgres in this project
+- Supabase project (for file storage: `receipts`, `signatures`, `exports` buckets)
+- Upstash Redis, provisioned via the **Vercel Marketplace** (Storage tab → Upstash for Redis)
 
 ---
 
@@ -40,22 +39,27 @@ npm install
 
 ### 2. Configure environment
 
-Create `.env.local` with the following:
+Create `.env.local` with the following. `prisma.config.ts` and `prisma/seed.ts` load `.env` then `.env.local` (the latter overrides), matching Next.js's own precedence.
 
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/budgettree
+DATABASE_URL=postgresql://...:6543/postgres?pgbouncer=true   # pooled — used by the app at runtime
+DIRECT_URL=postgresql://...:5432/postgres                    # direct — used by `prisma migrate`/seed
 
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your-secret-here
 
-SUPABASE_URL=https://<project-id>.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://<project-id>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-UPSTASH_REDIS_REST_URL=https://...
-UPSTASH_REDIS_REST_TOKEN=...
-
-RESEND_API_KEY=re_...
+# Provisioned automatically by `vercel integration add upstash/upstash-kv`.
+# The Marketplace integration injects KV_REST_API_URL/TOKEN (not UPSTASH_REDIS_REST_URL/TOKEN) —
+# lib/cache.ts reads those names directly.
+KV_REST_API_URL=https://...
+KV_REST_API_TOKEN=...
 ```
+
+Google login (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`) is optional — the provider is skipped automatically when unset.
 
 ### 3. Run database migrations
 

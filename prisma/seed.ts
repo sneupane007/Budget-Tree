@@ -1,7 +1,19 @@
+import { config } from "dotenv"
+// tsx doesn't auto-load .env files the way Next.js does, so this script needs
+// its own dotenv loading (same precedence as prisma.config.ts).
+config({ path: ".env" })
+config({ path: ".env.local", override: true })
+
 import { PrismaClient } from "@prisma/client"
+import { PrismaPg } from "@prisma/adapter-pg"
+import { Pool } from "pg"
 import bcrypt from "bcryptjs"
 
-const prisma = new PrismaClient()
+// Prisma 7's datasource block has no url, so the client needs an explicit
+// adapter — same pattern as lib/db.ts. Seeding uses the direct connection.
+const pool = new Pool({ connectionString: process.env.DIRECT_URL ?? process.env.DATABASE_URL })
+const adapter = new PrismaPg(pool)
+const prisma = new PrismaClient({ adapter })
 
 async function main() {
   // Clean up

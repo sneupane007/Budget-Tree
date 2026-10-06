@@ -1,9 +1,10 @@
 import { z } from "zod"
+import { positiveAmount } from "./money"
 
 export const CreateNodeSchema = z.object({
   name: z.string().min(2, "Node name must be at least 2 characters"),
   description: z.string().optional(),
-  allocatedAmount: z.string().refine((v) => parseFloat(v) > 0, "Amount must be positive"),
+  allocatedAmount: positiveAmount(),
   currency: z.string().min(1),
   parentId: z.string().cuid("Invalid parent node ID"),
   ownerId: z.string().cuid("Invalid owner ID"),
@@ -17,7 +18,7 @@ export const UpdateNodeSchema = z.object({
 })
 
 export const AllocateNodeSchema = z.object({
-  allocatedAmount: z.string().refine((v) => parseFloat(v) > 0, "Amount must be positive"),
+  allocatedAmount: positiveAmount(),
   reason: z.string().optional(),
 })
 
@@ -34,7 +35,7 @@ export const UpdateNodeStatusSchema = z.object({
 })
 
 export const SpendUpdateSchema = z.object({
-  amount: z.string().refine((v) => parseFloat(v) > 0, "Amount must be positive"),
+  amount: positiveAmount(),
   note: z.string().optional(),
 })
 

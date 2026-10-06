@@ -1,9 +1,10 @@
 import { z } from "zod"
+import { positiveAmount } from "./money"
 
 export const CreateProjectSchema = z.object({
   name: z.string().min(2, "Project name must be at least 2 characters"),
   description: z.string().optional(),
-  totalBudget: z.string().refine((v) => parseFloat(v) > 0, "Budget must be positive"),
+  totalBudget: positiveAmount("Budget must be positive"),
   currency: z.string().min(1),
 })
 

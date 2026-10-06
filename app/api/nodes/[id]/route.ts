@@ -80,9 +80,16 @@ export async function PATCH(
     })
     if (!node) return error("Node not found", 404)
 
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = UpdateNodeSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
+
+    // Owner/approver must belong to the caller's organization
+    for (const [field, userId] of [["Owner", parsed.data.ownerId], ["Approver", parsed.data.approverId]] as const) {
+      if (!userId) continue
+      const member = await prisma.user.findFirst({ where: { id: userId, organizationId: orgId } })
+      if (!member) return error(`${field} not found in your organization`, 404)
+    }
 
     const updated = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
       const result = await tx.budgetNode.update({
@@ -105,7 +112,11 @@ export async function PATCH(
       return result
     })
 
-    await cacheInvalidate(cacheKey(orgId, "nodes", id))
+    await cacheInvalidate(
+      cacheKey(orgId, "nodes", id),
+      cacheKey(orgId, "projects", node.projectId),
+      cacheKey(orgId, "projects"),
+    )
     await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
 
     return success({
@@ -158,6 +169,8 @@ export async function DELETE(
       cacheKey(orgId, "nodes", id),
       cacheKey(orgId, "projects", node.projectId),
       cacheKey(orgId, "projects"),
+      cacheKey(orgId, "dashboard"),
+      ...(node.parentId ? [cacheKey(orgId, "nodes", node.parentId)] : []),
     )
     await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
 

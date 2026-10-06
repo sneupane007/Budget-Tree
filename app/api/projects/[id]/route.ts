@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { prisma } from "@/lib/db"
-import { requireSession } from "@/lib/auth-helpers"
+import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { UpdateProjectSchema } from "@/lib/validators/project"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
@@ -56,6 +56,7 @@ export async function PATCH(
   try {
     const { id } = await params
     const session = await requireSession()
+    requireRole(session, "ADMIN", "MANAGER")
     const orgId = session.user.organizationId
 
     const project = await prisma.project.findFirst({
@@ -63,7 +64,7 @@ export async function PATCH(
     })
     if (!project) return error("Project not found", 404)
 
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = UpdateProjectSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 
@@ -72,7 +73,7 @@ export async function PATCH(
       data: parsed.data,
     })
 
-    await cacheInvalidate(cacheKey(orgId, "projects", id), cacheKey(orgId, "projects"))
+    await cacheInvalidate(cacheKey(orgId, "projects", id), cacheKey(orgId, "projects"), cacheKey(orgId, "dashboard"))
 
     return success(updated)
   } catch (e) {

@@ -3,10 +3,11 @@ import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/db"
 import { RegisterSchema } from "@/lib/validators/auth"
 import { success, error, validationError } from "@/lib/api-response"
+import { AuthError } from "@/lib/auth-helpers"
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = RegisterSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
 
     return success(user, 201)
   } catch (e) {
+    if (e instanceof AuthError) return error(e.message, e.status)
     console.error("[POST /api/register]", e)
     return error("Internal server error", 500)
   }

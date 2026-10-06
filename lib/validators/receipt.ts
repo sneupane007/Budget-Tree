@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { positiveAmount } from "./money"
 
 export const UploadReceiptSchema = z.object({
-  amount: z.string().refine((v) => parseFloat(v) > 0, "Amount must be positive"),
+  amount: positiveAmount(),
   vendor: z.string().optional(),
   receiptDate: z.string().optional(),
   notes: z.string().optional(),

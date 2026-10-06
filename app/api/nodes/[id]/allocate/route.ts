@@ -25,40 +25,52 @@ export async function PATCH(
     })
     if (!node) return error("Node not found", 404)
 
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = AllocateNodeSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 
     const newAmount = new Decimal(parsed.data.allocatedAmount)
 
-    // Validate against parent (excluding self from sibling sum)
-    if (node.parentId) {
-      const validation = await validateAllocation(node.parentId, newAmount, node.id, session.user.organizationId)
-      if (!validation.valid) return error(validation.message!, 422)
-    }
+    const outcome = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
+      // Lock this node and its parent (ordered by id) so concurrent allocations and
+      // child creates serialize, then validate against committed sibling data.
+      await tx.$queryRaw`
+        SELECT id FROM "BudgetNode"
+        WHERE id = ${id} OR id = ${node.parentId}
+        ORDER BY id
+        FOR UPDATE
+      `
 
-    // Ensure new amount >= already allocated to children
-    const children = await prisma.budgetNode.findMany({
-      where: { parentId: id },
-      select: { allocatedAmount: true },
-    })
-    const childrenSum = children.reduce(
-      (sum: Decimal, c: { allocatedAmount: { toString(): string } }) =>
-        sum.add(new Decimal(c.allocatedAmount.toString())),
-      new Decimal(0)
-    )
-    if (newAmount.lt(childrenSum)) {
-      return error(
-        `New allocation ${newAmount.toFixed(2)} is less than children's total ${childrenSum.toFixed(2)}`,
-        422
+      // Validate against parent (excluding self from sibling sum)
+      if (node.parentId) {
+        const validation = await validateAllocation(node.parentId, newAmount, node.id, session.user.organizationId, tx)
+        if (!validation.valid) return { invalid: validation.message! }
+      }
+
+      // Ensure new amount >= already allocated to children
+      const children = await tx.budgetNode.findMany({
+        where: { parentId: id },
+        select: { allocatedAmount: true },
+      })
+      const childrenSum = children.reduce(
+        (sum: Decimal, c: { allocatedAmount: { toString(): string } }) =>
+          sum.add(new Decimal(c.allocatedAmount.toString())),
+        new Decimal(0)
       )
-    }
+      if (newAmount.lt(childrenSum)) {
+        return {
+          invalid: `New allocation ${newAmount.toFixed(2)} is less than children's total ${childrenSum.toFixed(2)}`,
+        }
+      }
 
-    const updated = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
       const result = await tx.budgetNode.update({
         where: { id },
         data: { allocatedAmount: newAmount.toFixed(2) },
       })
+      // The root's allocation is the project's total budget; keep them in sync.
+      if (node.isRoot) {
+        await tx.project.update({ where: { id: node.projectId }, data: { totalBudget: newAmount.toFixed(2) } })
+      }
       await tx.auditLog.create({
         data: {
           nodeId: id,
@@ -69,13 +81,20 @@ export async function PATCH(
           ipAddress: req.headers.get("x-forwarded-for") ?? undefined,
         },
       })
-      return result
+      return { updated: result }
     })
+    if ("invalid" in outcome) return error(outcome.invalid!, 422)
+    const updated = outcome.updated
 
     const orgId = session.user.organizationId
-    await cacheInvalidate(cacheKey(orgId, "nodes", id))
+    await cacheInvalidate(
+      cacheKey(orgId, "nodes", id),
+      cacheKey(orgId, "projects", node.projectId),
+      cacheKey(orgId, "projects"),
+      cacheKey(orgId, "dashboard"),
+      ...(node.parentId ? [cacheKey(orgId, "nodes", node.parentId)] : []),
+    )
     await cacheInvalidatePattern(cacheKey(orgId, "audit", id, "*"))
-    if (node.projectId) await cacheInvalidate(cacheKey(orgId, "projects", node.projectId))
 
     return success({
       ...updated,

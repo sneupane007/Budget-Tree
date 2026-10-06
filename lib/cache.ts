@@ -1,9 +1,12 @@
 // This module must only be imported in server contexts (API routes, Server Components).
 import { Redis } from "@upstash/redis"
 
+// Provisioned via the Vercel Marketplace (Upstash for Redis), which injects
+// KV_REST_API_URL/TOKEN — or, if a second store is ever connected to this
+// project, the VERCEL_ENV_-prefixed variants to avoid a name collision.
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+  url: (process.env.KV_REST_API_URL ?? process.env.VERCEL_ENV_KV_REST_API_URL)!,
+  token: (process.env.KV_REST_API_TOKEN ?? process.env.VERCEL_ENV_KV_REST_API_TOKEN)!,
 })
 
 export function cacheKey(orgId: string, ...parts: string[]) {

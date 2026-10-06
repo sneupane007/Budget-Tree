@@ -24,9 +24,17 @@ export async function PATCH(
     })
     if (!member) return error("Member not found", 404)
 
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = UpdateRoleSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
+
+    // Never leave the organization without an admin (covers self-demotion too).
+    if (member.role === "ADMIN" && parsed.data.role !== "ADMIN") {
+      const adminCount = await prisma.user.count({
+        where: { organizationId: session.user.organizationId, role: "ADMIN" },
+      })
+      if (adminCount <= 1) return error("Cannot remove the last admin of the organization", 409)
+    }
 
     const updated = await prisma.user.update({
       where: { id },

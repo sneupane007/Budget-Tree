@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const session = await requireSession()
     requireRole(session, "ADMIN")
 
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = InviteMemberSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 

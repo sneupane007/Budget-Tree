@@ -33,7 +33,7 @@ async function getProject(id: string, orgId: string) {
     ...n,
     allocatedAmount: n.allocatedAmount.toString(),
     spentAmount: n.spentAmount.toString(),
-  })) as BudgetNodeWithOwner[]
+  })) as unknown as BudgetNodeWithOwner[]
 
   return { project, nodes: serializedNodes, orgUsers }
 }
@@ -44,9 +44,10 @@ const statusColor = {
   ARCHIVED: "bg-gray-100 text-gray-700",
 }
 
-export default async function ProjectPage({ params }: { params: { id: string } }) {
+export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const session = await getServerSession(authOptions)
-  const data = await getProject(params.id, session!.user.organizationId)
+  const data = await getProject(id, session!.user.organizationId)
   if (!data) notFound()
 
   const { project, nodes, orgUsers } = data

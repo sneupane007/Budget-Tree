@@ -23,7 +23,7 @@ export async function PATCH(
     })
     if (!node) return error("Node not found", 404)
 
-    const body = await req.json()
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = UpdateNodeStatusSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 

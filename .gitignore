@@ -40,6 +40,15 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# e2e/api test artifacts (private test Postgres cluster, auth state, reports)
+/.test-db/
+/.next-test/
+/tests/.auth/
+/tests/.report/
+/tests/.results/
+/test-results/
+/playwright-report/
+
 /app/generated/prisma
 /.claude/
 vercel.json

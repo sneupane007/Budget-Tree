@@ -1,13 +1,15 @@
 import { prisma } from "@/lib/db"
 import Decimal from "decimal.js"
+import type { Prisma } from "@prisma/client"
 
 export async function validateAllocation(
   parentId: string,
   requestedAmount: Decimal,
   excludeNodeId: string | undefined,
-  organizationId: string
+  organizationId: string,
+  db: Prisma.TransactionClient = prisma
 ): Promise<{ valid: boolean; available: Decimal; message?: string }> {
-  const parent = await prisma.budgetNode.findFirst({
+  const parent = await db.budgetNode.findFirst({
     where: {
       id: parentId,
       project: { organizationId },

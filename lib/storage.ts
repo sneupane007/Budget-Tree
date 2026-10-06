@@ -5,13 +5,18 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Storage object keys must not contain path separators, "..", spaces or non-ASCII.
+function safeSegment(name: string): string {
+  return name.replace(/[^A-Za-z0-9._@-]+/g, "_").replace(/\.{2,}/g, ".").replace(/^\./, "_").slice(0, 120) || "file"
+}
+
 export async function uploadReceipt(
   nodeId: string,
   file: Buffer,
   filename: string,
   contentType: string
 ): Promise<string> {
-  const path = `${nodeId}/${Date.now()}-${filename}`
+  const path = `${nodeId}/${Date.now()}-${safeSegment(filename)}`
   const { error } = await supabaseAdmin.storage
     .from("receipts")
     .upload(path, file, { contentType, upsert: false })
@@ -27,7 +32,7 @@ export async function uploadSignature(
   const match = dataUrl.match(/^data:image\/png;base64,(.+)$/)
   if (!match) throw new Error("Invalid signature data URL: expected PNG base64 data URL")
   const buffer = Buffer.from(match[1], "base64")
-  const path = `${nodeId}/${Date.now()}-${signerEmail}.png`
+  const path = `${nodeId}/${Date.now()}-${safeSegment(signerEmail)}.png`
   const { error } = await supabaseAdmin.storage
     .from("signatures")
     .upload(path, buffer, { contentType: "image/png", upsert: false })

@@ -49,11 +49,16 @@ export default function RegisterPage() {
         toast.error(json.error ?? "Registration failed")
         return
       }
-      await signIn("credentials", {
+      const result = await signIn("credentials", {
         email: data.email,
         password: data.password,
         redirect: false,
       })
+      if (result?.error) {
+        toast.error("Account created, but sign-in failed. Please log in.")
+        router.push("/login")
+        return
+      }
       router.push("/dashboard")
     } catch {
       toast.error("Something went wrong")

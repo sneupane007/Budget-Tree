@@ -1,40 +1,58 @@
 import { Prisma } from "@prisma/client"
 
-export async function recalculateRollups(
+// Locks the node and all of its ancestors in one statement, ordered by id.
+// Every spend locks its chain in the same global order, so concurrent spends
+// serialize instead of deadlocking or losing updates.
+export async function lockNodeChain(
   nodeId: string,
   tx: Prisma.TransactionClient
 ): Promise<void> {
-  // Walk upward from nodeId using recursive CTE, then update each ancestor's
-  // spentAmount to the sum of its direct children's spentAmount.
-  await tx.$executeRaw`
-    WITH RECURSIVE ancestors AS (
-      SELECT id, parent_id, 0 AS lvl
-      FROM "BudgetNode"
-      WHERE id = ${nodeId}
+  await tx.$queryRaw`
+    WITH RECURSIVE chain AS (
+      SELECT id, "parentId" FROM "BudgetNode" WHERE id = ${nodeId}
       UNION ALL
-      SELECT bn.id, bn.parent_id, a.lvl + 1
+      SELECT bn.id, bn."parentId"
       FROM "BudgetNode" bn
-      INNER JOIN ancestors a ON bn.id = a.parent_id
-    ),
-    child_sums AS (
-      SELECT parent_id, SUM(spent_amount) AS total_spent
+      INNER JOIN chain c ON bn.id = c."parentId"
+    )
+    SELECT id FROM "BudgetNode"
+    WHERE id IN (SELECT id FROM chain)
+    ORDER BY id
+    FOR UPDATE
+  `
+}
+
+// Adds `delta` to the spentAmount of every ancestor of nodeId (not the node
+// itself) and flips an ancestor to OVERSPENT when its total passes its
+// allocation. Incremental, so a parent's own direct spend is preserved and
+// every level of the tree (grandparents, root) is updated. Call inside the
+// same transaction, after lockNodeChain(). Returns the updated ancestor ids.
+export async function rollUpSpend(
+  nodeId: string,
+  delta: string,
+  tx: Prisma.TransactionClient
+): Promise<string[]> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    WITH RECURSIVE ancestors AS (
+      SELECT id, "parentId"
       FROM "BudgetNode"
-      WHERE parent_id IN (SELECT id FROM ancestors WHERE lvl > 0)
-      GROUP BY parent_id
+      WHERE id = (SELECT "parentId" FROM "BudgetNode" WHERE id = ${nodeId})
+      UNION ALL
+      SELECT bn.id, bn."parentId"
+      FROM "BudgetNode" bn
+      INNER JOIN ancestors a ON bn.id = a."parentId"
     )
     UPDATE "BudgetNode"
     SET
-      spent_amount = COALESCE(cs.total_spent, "BudgetNode".spent_amount),
+      "spentAmount" = "spentAmount" + ${delta}::numeric,
       status = CASE
-        WHEN COALESCE(cs.total_spent, "BudgetNode".spent_amount) > "BudgetNode".allocated_amount
+        WHEN "spentAmount" + ${delta}::numeric > "allocatedAmount"
           THEN 'OVERSPENT'::"NodeStatus"
-        WHEN status = 'OVERSPENT'::"NodeStatus"
-          AND COALESCE(cs.total_spent, "BudgetNode".spent_amount) <= "BudgetNode".allocated_amount
-          THEN 'IN_PROGRESS'::"NodeStatus"
         ELSE status
       END,
-      updated_at = NOW()
-    FROM child_sums cs
-    WHERE "BudgetNode".id = cs.parent_id
+      "updatedAt" = NOW()
+    WHERE id IN (SELECT id FROM ancestors)
+    RETURNING id
   `
+  return rows.map((r) => r.id)
 }

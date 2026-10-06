@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { prisma } from "@/lib/db"
-import { requireSession } from "@/lib/auth-helpers"
+import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { UploadReceiptSchema } from "@/lib/validators/receipt"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
@@ -11,9 +11,21 @@ import { cacheKey, cacheInvalidate, cacheInvalidatePattern } from "@/lib/cache"
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"]
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
 
+// The declared MIME type is client-supplied; confirm the bytes match it.
+function matchesType(buf: Buffer, type: string): boolean {
+  switch (type) {
+    case "image/jpeg": return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
+    case "image/png": return buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    case "image/webp": return buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP"
+    case "application/pdf": return buf.subarray(0, 5).toString("latin1") === "%PDF-"
+    default: return false
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSession()
+    requireRole(session, "ADMIN", "MANAGER", "VERIFIER")
     const formData = await req.formData()
 
     const file = formData.get("file") as File | null
@@ -25,10 +37,11 @@ export async function POST(req: NextRequest) {
     if (!nodeId) return error("nodeId is required", 400)
 
     const meta = {
+      // formData.get() returns null for omitted fields, which zod's .optional() rejects
       amount: formData.get("amount"),
-      vendor: formData.get("vendor"),
-      receiptDate: formData.get("receiptDate"),
-      notes: formData.get("notes"),
+      vendor: formData.get("vendor") ?? undefined,
+      receiptDate: formData.get("receiptDate") ?? undefined,
+      notes: formData.get("notes") ?? undefined,
     }
     const parsed = UploadReceiptSchema.safeParse(meta)
     if (!parsed.success) return validationError(parsed.error.issues)
@@ -43,6 +56,7 @@ export async function POST(req: NextRequest) {
     if (!node) return error("Node not found", 404)
 
     const buffer = Buffer.from(await file.arrayBuffer())
+    if (!matchesType(buffer, file.type)) return error("File content does not match its declared type", 400)
     const filePath = await uploadReceipt(nodeId, buffer, file.name, file.type)
 
     const receipt = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -38,6 +38,8 @@ interface Props {
 
 export function MembersTable({ members: initial, currentUserId, isAdmin }: Props) {
   const [members, setMembers] = useState(initial)
+  // Follow the parent list (e.g. after an invite) instead of keeping the first snapshot.
+  useEffect(() => setMembers(initial), [initial])
   const [loadingId, setLoadingId] = useState<string | null>(null)
 
   async function handleRoleChange(memberId: string, role: Role) {

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { prisma } from "@/lib/db"
-import { requireSession } from "@/lib/auth-helpers"
+import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { CreateProjectSchema } from "@/lib/validators/project"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
@@ -43,7 +43,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSession()
-    const body = await req.json()
+    requireRole(session, "ADMIN", "MANAGER")
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = CreateProjectSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 

@@ -1,16 +1,18 @@
 import { NextRequest } from "next/server"
 import { prisma } from "@/lib/db"
-import { requireSession } from "@/lib/auth-helpers"
+import { requireSession, requireRole } from "@/lib/auth-helpers"
 import { CreateNodeSchema } from "@/lib/validators/node"
 import { success, error, validationError } from "@/lib/api-response"
 import { AuthError } from "@/lib/auth-helpers"
 import { validateAllocation } from "@/lib/budget/validate-allocation"
 import Decimal from "decimal.js"
+import { cacheKey, cacheInvalidate } from "@/lib/cache"
 
 export async function POST(req: NextRequest) {
   try {
     const session = await requireSession()
-    const body = await req.json()
+    requireRole(session, "ADMIN", "MANAGER")
+    const body = await req.json().catch(() => { throw new AuthError("Invalid JSON body", 400) })
     const parsed = CreateNodeSchema.safeParse(body)
     if (!parsed.success) return validationError(parsed.error.issues)
 
@@ -31,12 +33,15 @@ export async function POST(req: NextRequest) {
     })
     if (!owner) return error("Owner not found in your organization", 404)
 
-    // Validate allocation
     const requestedDecimal = new Decimal(allocatedAmount)
-    const validation = await validateAllocation(parentId, requestedDecimal, undefined, session.user.organizationId)
-    if (!validation.valid) return error(validation.message!, 422)
 
-    const node = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
+    const outcome = await prisma.$transaction(async (tx: import("@prisma/client").Prisma.TransactionClient) => {
+      // Lock the parent so concurrent creates under it serialize: each one validates
+      // against the siblings committed by the previous one.
+      await tx.$queryRaw`SELECT id FROM "BudgetNode" WHERE id = ${parentId} FOR UPDATE`
+      const validation = await validateAllocation(parentId, requestedDecimal, undefined, session.user.organizationId, tx)
+      if (!validation.valid) return { invalid: validation.message! }
+
       const created = await tx.budgetNode.create({
         data: {
           name,
@@ -64,8 +69,18 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      return created
+      return { node: created }
     })
+    if ("invalid" in outcome) return error(outcome.invalid!, 422)
+    const node = outcome.node
+
+    const orgId = session.user.organizationId
+    await cacheInvalidate(
+      cacheKey(orgId, "nodes", parentId),
+      cacheKey(orgId, "projects", parent.projectId),
+      cacheKey(orgId, "projects"),
+      cacheKey(orgId, "dashboard"),
+    )
 
     return success({
       ...node,
