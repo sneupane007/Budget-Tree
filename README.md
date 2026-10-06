@@ -4,6 +4,10 @@ A hierarchical budget management platform for organizations. Budget allocations 
 
 Visit `/home` for the public landing page, or `/dashboard` after signing in.
 
+## Demo
+
+![BudgetTree project view showing a budget tree with allocations per node](demopage.png)
+
 ## Tech Stack
 
 | Layer | Technology |
